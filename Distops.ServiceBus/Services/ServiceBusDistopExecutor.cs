@@ -7,23 +7,23 @@ using Distops.Core.Model;
 using Distops.Core.Services;
 using Microsoft.CorrelationVector;
 
-namespace Distops.Core.TestShit;
+namespace Distops.ServiceBus.Services;
 
 // https://docs.microsoft.com/en-us/samples/azure/azure-sdk-for-net/azuremessagingservicebus-samples/
 // https://andrewlock.net/introducing-ihostlifetime-and-untangling-the-generic-host-startup-interactions/
-public class ServiceBusDistopService : IDistopService, IHostLifetime, IAsyncDisposable
+public class ServiceBusDistopExecutor : IDistopService, IHostLifetime, IAsyncDisposable
 {
     private const string CloudEventSource = "/cloudevents/distops/servicebus";
     private readonly ServiceBusClient _client;
     private readonly ServiceBusSender _sender;
     private ServiceBusProcessor _serviceBusProcessor;
-    private ILogger<ServiceBusDistopService> _logger;
+    private ILogger<ServiceBusDistopClient> _logger;
 
-    public ServiceBusDistopService(
+    public ServiceBusDistopExecutor(
         string connectionString,
         string topicName,
         string subscriptionName,
-        ILogger<ServiceBusDistopService> logger)
+        ILogger<ServiceBusDistopClient> logger)
     {
         _logger = logger;
         _client = new ServiceBusClient(connectionString);
@@ -55,13 +55,12 @@ public class ServiceBusDistopService : IDistopService, IHostLifetime, IAsyncDisp
         await _serviceBusProcessor.DisposeAsync();
     }
 
-    public async Task<object?> Call(DistopContext distopContext)
+    public async Task<object?> Call(DistopContext distopContext, CancellationToken? cancellationToken = default)
     {
         // Send a message in the topic
         await SendMessageAsync(distopContext, true);
 
-        CancellationToken cancellationToken = CancellationToken.None;
-        await using var acceptSessionAsync = await _client.AcceptSessionAsync(topicName, subscriptionName, "sesssionId", cancellationToken: cancellationToken);
+        await using var acceptSessionAsync = await _client.AcceptSessionAsync("topicName", "subscriptionName", "sesssionId", cancellationToken: cancellationToken);
         var receiveMessage = await acceptSessionAsync.ReceiveMessageAsync(TimeSpan.FromSeconds(30), cancellationToken);
         var stopwatch = Stopwatch.StartNew();
         try
@@ -95,7 +94,7 @@ public class ServiceBusDistopService : IDistopService, IHostLifetime, IAsyncDisp
         }
     }
 
-    public async Task FireAndForget(DistopContext distopContext)
+    public async Task FireAndForget(DistopContext distopContext, CancellationToken? cancellationToken = default)
     {
         await SendMessageAsync(distopContext, false);
     }

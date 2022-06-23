@@ -4,7 +4,7 @@ using Azure.Messaging;
 using Azure.Messaging.ServiceBus;
 using Distops.Core.Model;
 
-namespace Distops.Core.TestShit;
+namespace Distops.ServiceBus.Services;
 
 public class ServiceBusRx
 {
@@ -12,7 +12,7 @@ public class ServiceBusRx
     private readonly string subscriptionName;
     private readonly ServiceBusClient _client;
     private readonly ServiceBusSender _sender;
-    private ILogger<ServiceBusDistopService> _logger;
+    private ILogger<ServiceBusDistopClient> _logger;
 
     private void RxStream()
     {

@@ -12,14 +12,16 @@ public class InProcessDistopService : IDistopService
         _distopExecutor = distopExecutor;
     }
 
-    public async Task<object?> Call(DistopContext distopContext)
+    public async Task<object?> Call(DistopContext distopContext, CancellationToken? cancellationToken = default)
     {
+        var token = cancellationToken ?? CancellationToken.None;
         return await _distopExecutor.ExecuteDistop(distopContext);
     }
 
-    public Task FireAndForget(DistopContext distopContext)
+    public Task FireAndForget(DistopContext distopContext, CancellationToken? cancellationToken = default)
     {
-        Task.Factory.StartNew(async () => await _distopExecutor.ExecuteDistop(distopContext));
+        var token = cancellationToken ?? CancellationToken.None;
+        Task.Factory.StartNew(async () => await _distopExecutor.ExecuteDistop(distopContext), token);
         return Task.CompletedTask;
     }
 }

@@ -1,10 +1,12 @@
 ﻿using Castle.DynamicProxy;
+using Distops.Core.Services;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace Distops.Core.Services;
+namespace Distops.Core.Extensions;
 
 public static class DistopExtensions
 {
-    public static IServiceCollection AddDistopsService<T>(this IServiceCollection serviceCollection)
+    public static IServiceCollection AddDistopsClient<T>(this IServiceCollection serviceCollection)
         where T : class, IDistopService
     {
         return serviceCollection
@@ -12,7 +14,7 @@ public static class DistopExtensions
             .AddSingleton<IDistopService, T>();
     }
 
-    public static IServiceCollection AddDistopsService<T>(
+    public static IServiceCollection AddDistopsClient<T>(
         this IServiceCollection serviceCollection,
         Func<IServiceProvider, T> distopServiceProvider)
         where T : class, IDistopService

@@ -1,27 +1,22 @@
 ﻿using System.Diagnostics;
+using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
+using Distops.Core.Test.Samples;
 using Microsoft.Extensions.Logging;
 
-namespace Distops.Core.Test.Samples;
+namespace Distops.ServiceBus.Test.Samples;
 
-public class AsyncDistop : IAsyncDistop
+public class RxDistop : IAsyncDistop
 {
-    private readonly ILogger<AsyncDistop> _logger;
-    private readonly IAsyncEnumerable<long> _tickStream;
+    private readonly ILogger<RxDistop> _logger;
+    private readonly IObservable<long> _tickStream;
 
-    public AsyncDistop(ILogger<AsyncDistop> logger)
+    public RxDistop(ILogger<RxDistop> logger)
     {
         this._logger = logger;
-        _tickStream = EveryOneSecond();
-    }
-
-    private async IAsyncEnumerable<long> EveryOneSecond()
-    {
-        var i = 0;
-        while (true)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(1));
-            yield return i++;
-        }
+        _tickStream = Observable.Interval(TimeSpan.FromSeconds(1))
+            .Publish()
+            .RefCount();
     }
 
     public long SyncCallReturns()
@@ -63,7 +58,7 @@ public class AsyncDistop : IAsyncDistop
 
         try
         {
-            var tick = await _tickStream.Take(3).FirstAsync(cancellationToken);
+            var tick = await _tickStream.Take(3).ToTask(cancellationToken);
             _logger.LogInformation($"CurrentTick: {tick}");
             return tick;
         }

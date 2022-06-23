@@ -1,4 +1,6 @@
 ﻿using Distops.Core.Model;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Distops.Core.Services;
 

@@ -1,4 +1,5 @@
 ﻿using System.Runtime.Serialization;
+using Azure.Messaging.ServiceBus;
 
 namespace Distops.Core.Model;
 

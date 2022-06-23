@@ -2,7 +2,7 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
-namespace Distops.Core.TestShit
+namespace Distops.ServiceBus.Services
 {
     public static class ObservableExtensions
     {

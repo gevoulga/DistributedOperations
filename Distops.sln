@@ -6,6 +6,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Distops.InProcess", "Distop
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Distops.Core.Test", "Distops.Core.Test\Distops.Core.Test.csproj", "{96A502C6-D7AE-4F79-9EE6-7BCC1960AED0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Distops.ServiceBus", "Distops.ServiceBus\Distops.ServiceBus.csproj", "{971EE9C0-B44F-4799-A0AB-4B8BC8A8F11D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Distops.ServiceBus.Test", "Distops.ServiceBus.Test\Distops.ServiceBus.Test.csproj", "{714D3CE2-C920-4133-A7DB-03EA53FFDE69}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +28,13 @@ Global
 		{96A502C6-D7AE-4F79-9EE6-7BCC1960AED0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{96A502C6-D7AE-4F79-9EE6-7BCC1960AED0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{96A502C6-D7AE-4F79-9EE6-7BCC1960AED0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{971EE9C0-B44F-4799-A0AB-4B8BC8A8F11D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{971EE9C0-B44F-4799-A0AB-4B8BC8A8F11D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{971EE9C0-B44F-4799-A0AB-4B8BC8A8F11D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{971EE9C0-B44F-4799-A0AB-4B8BC8A8F11D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{714D3CE2-C920-4133-A7DB-03EA53FFDE69}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{714D3CE2-C920-4133-A7DB-03EA53FFDE69}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{714D3CE2-C920-4133-A7DB-03EA53FFDE69}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{714D3CE2-C920-4133-A7DB-03EA53FFDE69}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

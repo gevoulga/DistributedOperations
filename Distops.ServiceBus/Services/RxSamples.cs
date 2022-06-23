@@ -1,6 +1,6 @@
 ﻿using Azure.Messaging.ServiceBus;
 
-namespace Distops.Core.TestShit;
+namespace Distops.ServiceBus.Services;
 
 // https://docs.microsoft.com/en-us/samples/azure/azure-sdk-for-net/azuremessagingservicebus-samples/
 public class RxSamples
@@ -8,7 +8,7 @@ public class RxSamples
     private const string CloudEventSource = "/cloudevents/distops/servicebus";
     private readonly ServiceBusClient _client;
     private readonly ServiceBusSender _sender;
-    private ILogger<ServiceBusDistopService> _logger;
+    private ILogger<ServiceBusDistopClient> _logger;
     public RxSamples(string connectionString, string topicName)
     {
         _client = new ServiceBusClient(connectionString);

@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
 using Castle.DynamicProxy;
+using Microsoft.Extensions.Logging;
 
 namespace Distops.Core.Model;
 
