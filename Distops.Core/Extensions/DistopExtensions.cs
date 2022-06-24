@@ -1,27 +1,16 @@
 ﻿using Castle.DynamicProxy;
 using Distops.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Distops.Core.Extensions;
 
 public static class DistopExtensions
 {
-    public static IServiceCollection AddDistopsClient<T>(this IServiceCollection serviceCollection)
-        where T : class, IDistopService
+    public static IServiceCollection AddDistopExecutor(this IServiceCollection services)
     {
-        return serviceCollection
-            .AddSingleton<IDistopExecutor>(sp => new DistopExecutor(sp))
-            .AddSingleton<IDistopService, T>();
-    }
-
-    public static IServiceCollection AddDistopsClient<T>(
-        this IServiceCollection serviceCollection,
-        Func<IServiceProvider, T> distopServiceProvider)
-        where T : class, IDistopService
-    {
-        return serviceCollection
-            .AddSingleton<IDistopExecutor>(sp => new DistopExecutor(sp))
-            .AddSingleton<IDistopService, T>(distopServiceProvider);
+        services.TryAddSingleton<IDistopExecutor>(sp => new DistopExecutor(sp));
+        return services;
     }
 
     public static TInterface GetDistop<TInterface>(this IServiceProvider sp)

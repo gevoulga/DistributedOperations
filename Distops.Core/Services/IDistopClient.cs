@@ -2,7 +2,7 @@
 
 namespace Distops.Core.Services;
 
-public interface IDistopService
+public interface IDistopClient
 {
     /// <summary>
     /// Submit the distributed operation and wait it is completed. If a value is to be returned, it will be retried.

@@ -21,4 +21,10 @@
       <ProjectReference Include="..\Distops.ServiceBus\Distops.ServiceBus.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <None Update="Configuration\*">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
 </Project>

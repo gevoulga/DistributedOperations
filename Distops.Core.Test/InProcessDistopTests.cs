@@ -1,19 +1,18 @@
 using Distops.Core.Extensions;
 using Distops.Core.Services;
-using Distops.Core.Test;
 using Distops.Core.Test.Samples;
-using Distops.ServiceBus.Services;
+using Distops.InProcess.Services;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Distops.ServiceBus.Test
+namespace Distops.Core.Test
 {
-    public class DistopTests
+    public class InProcessDistopTests
     {
         private IServiceProvider sp;
 
-        public DistopTests()
+        public InProcessDistopTests()
         {
             // var loggerFactory = new NLogLoggerFactory();
             // interceptorLogger = loggerFactory.CreateLogger<DistopInterceptor>();
@@ -28,24 +27,13 @@ namespace Distops.ServiceBus.Test
             // serviceCollection.AddLogging();
 
 
-            var distopService = new ServiceBusDistopClient(
-                "Endpoint=sb://gvoulgarakis.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=tOUMyVJSxazsYS3zyQeXCwppA0W7XeNNUMNA007Hf1k=",
-                "calendar.controlmessage");
             // The distops initialization
             serviceCollection
-                // .AddDistopsService<InProcessDistopService>() // Add the processing of distops
-                // .AddDistopsService((ss) => distopService)
+                .AddInProcessDistops() // Add the processing of distops (client + server is same for InProcessor)
                 .AddSingleton<IAsyncDistop, AsyncDistop>()
                 .AddSingleton<ISyncDistop, SyncDistop>()
                 .AddSingleton<IThrowsDistop, ThrowsDistop>()
                 .AddSingleton<IFireAndForgetDistop, FireAndForgetDistop>();
-
-            // "calendar.controlmessage": {
-            //     "MessageTtl": "00:10:00",
-            //     "MaxLockAutoRenewDuration": "00:01:00",
-            //     "SubscriptionPrefix": "notif-svc",
-            //     "MaxConcurrentCalls": 1
-            // },
 
             sp = serviceCollection.BuildServiceProvider();
         }

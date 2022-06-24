@@ -1,4 +1,6 @@
-﻿namespace Distops.Core.Test.Samples;
+﻿using Distops.Core.Test.Samples;
+
+namespace Distops.ServiceBus.Test.Samples;
 
 public interface IAsyncDistop
 {
@@ -6,5 +8,5 @@ public interface IAsyncDistop
     Task DoSomething<T>(DistopDto distopDto, T t, CancellationToken cancellationToken);
     Task<long> JustALong();
     Task<long> CurrentTick(DistopDto distopDto, CancellationToken cancellationToken);
-    IAsyncEnumerable<long> Ticks(DistopDto distopDto);
+    IObservable<long> Ticks(DistopDto distopDto);
 }

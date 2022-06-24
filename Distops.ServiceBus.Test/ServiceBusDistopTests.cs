@@ -1,39 +1,61 @@
+using System.Reflection;
 using Distops.Core.Extensions;
-using Distops.Core.Services;
+using Distops.Core.Test;
 using Distops.Core.Test.Samples;
-using Distops.InProcess.Services;
+using Distops.ServiceBus.Extensions;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Distops.Core.Test
+namespace Distops.ServiceBus.Test
 {
-    public class DistopTests
+    public class ServiceBusDistopTests
     {
+        private const string AppSettingsCommonPath = @"Configuration\appsettings.";
+
         private IServiceProvider sp;
 
-        public DistopTests()
+        public ServiceBusDistopTests()
         {
-            // var loggerFactory = new NLogLoggerFactory();
-            // interceptorLogger = loggerFactory.CreateLogger<DistopInterceptor>();
+            // https://weblog.west-wind.com/posts/2018/Feb/18/Accessing-Configuration-in-NET-Core-Test-Projects
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location))
+                .AddJsonFile($"{AppSettingsCommonPath}Debug.json", optional: false)
+                // .AddUserSecrets("e3dfcccf-0cb3-423a-b302-e3e92e95c128")
+                // .AddEnvironmentVariables()
+                .Build();
 
             var serviceCollection = new ServiceCollection();
             serviceCollection.AddLogging(builder => builder
                 .SetMinimumLevel(LogLevel.Information)
-                .AddFilter("Microsoft.Skype.ChatServiceTestFramework", LogLevel.Trace)
-                .AddFilter("Microsoft.Teams.NotificationService", LogLevel.Trace)
+                .AddFilter("Distops.ServiceBus", LogLevel.Trace)
                 .AddProvider(new TestContextLoggerProvider(TestContext.CurrentContext)));
             // serviceCollection.AddSingleton<NLogLoggerFactory>();
             // serviceCollection.AddLogging();
 
 
+            // var distopService = new ServiceBusDistopClient(
+            //     "Endpoint=sb://gvoulgarakis.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=tOUMyVJSxazsYS3zyQeXCwppA0W7XeNNUMNA007Hf1k=",
+            //     "calendar.controlmessage");
+
             // The distops initialization
             serviceCollection
-                .AddDistopsClient<InProcessDistopService>() // Add the processing of distops (client + server is same for InProcessor)
+                .AddServiceBusDistopClient(configuration)
+                .AddServiceBusDistopExecutor(configuration)
+                // .AddDistopsService<InProcessDistopService>() // Add the processing of distops
+                // .AddDistopsService((ss) => distopService)
                 .AddSingleton<IAsyncDistop, AsyncDistop>()
                 .AddSingleton<ISyncDistop, SyncDistop>()
                 .AddSingleton<IThrowsDistop, ThrowsDistop>()
                 .AddSingleton<IFireAndForgetDistop, FireAndForgetDistop>();
+
+            // "calendar.controlmessage": {
+            //     "MessageTtl": "00:10:00",
+            //     "MaxLockAutoRenewDuration": "00:01:00",
+            //     "SubscriptionPrefix": "notif-svc",
+            //     "MaxConcurrentCalls": 1
+            // },
 
             sp = serviceCollection.BuildServiceProvider();
         }

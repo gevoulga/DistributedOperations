@@ -1,170 +1,70 @@
 ﻿using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
 using Azure.Messaging;
 using Azure.Messaging.ServiceBus;
 using Distops.Core.Model;
 using Distops.Core.Services;
+using Distops.ServiceBus.Options;
 using Microsoft.CorrelationVector;
+using Microsoft.Extensions.Options;
+using static Distops.ServiceBus.Services.ServiceBusDistopClient;
 
 namespace Distops.ServiceBus.Services;
 
 // https://docs.microsoft.com/en-us/samples/azure/azure-sdk-for-net/azuremessagingservicebus-samples/
 // https://andrewlock.net/introducing-ihostlifetime-and-untangling-the-generic-host-startup-interactions/
-public class ServiceBusDistopExecutor : IDistopService, IHostLifetime, IAsyncDisposable
+public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
 {
-    private const string CloudEventSource = "/cloudevents/distops/servicebus";
+    private readonly ILogger<ServiceBusDistopExecutor> _logger;
     private readonly ServiceBusClient _client;
+    private readonly ServiceBusProcessor _serviceBusProcessor;
+    private readonly IDistopExecutor _distopExecutor;
     private readonly ServiceBusSender _sender;
-    private ServiceBusProcessor _serviceBusProcessor;
-    private ILogger<ServiceBusDistopClient> _logger;
 
     public ServiceBusDistopExecutor(
-        string connectionString,
-        string topicName,
-        string subscriptionName,
-        ILogger<ServiceBusDistopClient> logger)
+        IOptions<ServiceBusDistopOptions> options,
+        ILogger<ServiceBusDistopExecutor> logger,
+        IDistopExecutor distopExecutor)
     {
-        _logger = logger;
-        _client = new ServiceBusClient(connectionString);
-        _sender = _client.CreateSender(topicName);
-        var options = new ServiceBusProcessorOptions
-        {
-            // By default or when AutoCompleteMessages is set to true, the processor will complete the message after executing the message handler
-            // Set AutoCompleteMessages to false to [settle messages](https://docs.microsoft.com/en-us/azure/service-bus-messaging/message-transfers-locks-settlement#peeklock) on your own.
-            // In both cases, if the message handler throws an exception without settling the message, the processor will abandon the message.
-            // AutoCompleteMessages = false,
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _distopExecutor = distopExecutor ?? throw new ArgumentNullException(nameof(distopExecutor));
+        var optionsValue = options.Value ?? throw new ArgumentNullException(nameof(options));
+        _client = new ServiceBusClient(optionsValue.ServiceBusEndpoint, optionsValue.ServiceBusClientOptions);
+        _sender = _client.CreateSender(optionsValue.TopicName);
+        _serviceBusProcessor = CreateProcessor(optionsValue);
+    }
 
-            // I can also allow for multi-threading
-            MaxConcurrentCalls = 2
-        };
+    public ServiceBusDistopExecutor(
+        ILogger<ServiceBusDistopExecutor> logger,
+        IOptions<ServiceBusDistopOptions> options,
+        ServiceBusClient serviceBusClient,
+        IDistopExecutor distopExecutor)
+    {
+        if (distopExecutor == null) throw new ArgumentNullException(nameof(distopExecutor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        var optionsValue = options.Value ?? throw new ArgumentNullException(nameof(options));
+        _client = serviceBusClient;
+        _distopExecutor = distopExecutor;
+        _sender = _client.CreateSender(optionsValue.TopicName);
+        _serviceBusProcessor = CreateProcessor(optionsValue);
+    }
 
-
+    private ServiceBusProcessor CreateProcessor(ServiceBusDistopOptions options)
+    {
         // create a session processor that we can use to process the messages
-        _serviceBusProcessor = _client.CreateProcessor(topicName, subscriptionName, options);
-
+        var processor = _client.CreateProcessor(options.TopicName, options.SubscriptionName, options.ServiceBusProcessorOptions);
         // configure the message and error handler to use
-        _serviceBusProcessor.ProcessMessageAsync += MessageHandler;
-        _serviceBusProcessor.ProcessErrorAsync += ErrorHandler;
+        processor.ProcessMessageAsync += MessageHandler;
+        processor.ProcessErrorAsync += ErrorHandler;
+        return processor;
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _sender.DisposeAsync();
-        await _client.DisposeAsync();
-        await _serviceBusProcessor.DisposeAsync();
-    }
-
-    public async Task<object?> Call(DistopContext distopContext, CancellationToken? cancellationToken = default)
-    {
-        // Send a message in the topic
-        await SendMessageAsync(distopContext, true);
-
-        await using var acceptSessionAsync = await _client.AcceptSessionAsync("topicName", "subscriptionName", "sesssionId", cancellationToken: cancellationToken);
-        var receiveMessage = await acceptSessionAsync.ReceiveMessageAsync(TimeSpan.FromSeconds(30), cancellationToken);
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            // Deserialize the message body into a CloudEvent
-            CloudEvent receivedCloudEvent = CloudEvent.Parse(receiveMessage.Body);
-            var distopReturnedValue = receivedCloudEvent.Data.ToObjectFromJson<DistopReturnedValue>();
-
-            // we can evaluate application logic and use that to determine how to settle the message.
-            await acceptSessionAsync.CompleteMessageAsync(receiveMessage, cancellationToken);
-
-            return distopReturnedValue.Value;
-        }
-        catch (DistopPermanentException distopPermanentException)
-        {
-            await acceptSessionAsync.DeadLetterMessageAsync(
-                receiveMessage,
-                nameof(DistopPermanentException),
-                distopPermanentException.Message,
-                cancellationToken);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
-        finally
-        {
-            stopwatch.Stop();
-            // this.telemetryLogger.Log(new MessagePostMetric(this.topicName, message, stopwatch.Elapsed));
-        }
-    }
-
-    public async Task FireAndForget(DistopContext distopContext, CancellationToken? cancellationToken = default)
-    {
-        await SendMessageAsync(distopContext, false);
-    }
-
-    private async Task SendMessageAsync(
-        DistopContext distopContext,
-        bool expectResponse,
-        CancellationToken cancellationToken = default)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        var rawMessage = BuildServiceBusMessage(distopContext, new CorrelationVector(), expectResponse);
-
-        try
-        {
-            // _logger.LogInformation(
-            //     "Posting ServiceBus message {0}/{1} to topic {2}, cv={3}",
-            //     rawMessage.MessageId,
-            //     this.topicName,
-            //     this.operationContextProvider.Context?.CorrelationVector.Value);
-
-            await this._sender.SendMessageAsync(rawMessage, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            // this.logger.LogError(
-            //     "Posting ServiceBus message {0}/{1} to topic {2} failed, cv={3}\r\n{4}",
-            //     message.GetType().Name,
-            //     rawMessage.MessageId,
-            //     this.topicName,
-            //     this.operationContextProvider.Context?.CorrelationVector.Value,
-            //     ex);
-            throw;
-        }
-        finally
-        {
-            stopwatch.Stop();
-            // this.telemetryLogger.Log(new MessagePostMetric(this.topicName, message, stopwatch.Elapsed));
-        }
-    }
-
-    private ServiceBusMessage BuildServiceBusMessage(
-        DistopContext distopContext,
-        CorrelationVector cv,
-        bool expectResponse)
-    {
-        var cloudEvent = new CloudEvent(
-            CloudEventSource,
-            nameof(DistopContext),
-            distopContext);
-        ServiceBusMessage message = new ServiceBusMessage(new BinaryData(cloudEvent))
-        {
-            ReplyToSessionId = "" // Generate a session id
-        };
-
-        // var args = JsonSerializer.Serialize(invocation.Arguments);
-        // var genArgs = JsonSerializer.Serialize(invocation.GenericArguments);
-        var serialized = JsonSerializer.Serialize(distopContext);
-        // var serialized = JsonConvert.SerializeObject(distopContext);
-        var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(serialized));
-        serviceBusMessage.TimeToLive = TimeSpan.FromMinutes(10);
-        serviceBusMessage.MessageId = Guid.NewGuid().ToString();
-        serviceBusMessage.CorrelationId = cv.Value;
-        serviceBusMessage.ApplicationProperties.Add("expect-reply", expectResponse);
-        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.SerializationMasterVersion, CurrentSerializationMasterVersion);
-        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.SerializationSubVersion, this.SerializationSubVersion);
-        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.MessageType, this.MessageType);
-        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.PostTime, DateTime.UtcNow);
-        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.TargetPool, currentPool);
-
-        return serviceBusMessage;
+        // TODO  cleanup the servicebus client if it was created in constructed (and not injected)
+        await Task.WhenAll(
+            _sender.DisposeAsync().AsTask(),
+            _serviceBusProcessor.DisposeAsync().AsTask(),
+            _client.DisposeAsync().AsTask());
     }
 
     public async Task WaitForStartAsync(CancellationToken cancellationToken) =>
@@ -175,33 +75,33 @@ public class ServiceBusDistopExecutor : IDistopService, IHostLifetime, IAsyncDis
 
     private async Task MessageHandler(ProcessMessageEventArgs args)
     {
-        var stopwatch = Stopwatch.StartNew();
+        var watch = Stopwatch.StartNew();
+        _logger.LogTrace("Received ServiceBus message {} on {}", args.Message.MessageId, _serviceBusProcessor.EntityPath);
         try
         {
-            // Deserialize the message body into a CloudEvent
-            CloudEvent receivedCloudEvent = CloudEvent.Parse(args.Message.Body);
-            var distopContext = receivedCloudEvent.Data.ToObjectFromJson<DistopContext>();
-
+            ScheduleDistop(args);
 
             // we can evaluate application logic and use that to determine how to settle the message.
             await args.CompleteMessageAsync(args.Message);
         }
-        catch (DistopPermanentException distopPermanentException)
+        catch (ServiceBusException serviceBusException)
         {
-            await args.DeadLetterMessageAsync(
-                args.Message,
-                nameof(DistopPermanentException),
-                distopPermanentException.Message,
-                args.CancellationToken);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
+            _logger.LogError(serviceBusException, "Receiving ServiceBus message {} on {} failed", args.Message.MessageId, _serviceBusProcessor.EntityPath);
+            if (!serviceBusException.IsTransient)
+            {
+                await args.DeadLetterMessageAsync(
+                    args.Message,
+                    nameof(DistopPermanentException),
+                    serviceBusException.Message,
+                    args.CancellationToken);
+            }
             throw;
         }
         finally
         {
-            stopwatch.Stop();
+            watch.Stop();
+            _logger.LogTrace("Received ServiceBus message {} to {} in {}", args.Message.MessageId, _serviceBusProcessor.EntityPath, watch.Elapsed);
+            // TODO add telemetry metrics
             // this.telemetryLogger.Log(new MessagePostMetric(this.topicName, message, stopwatch.Elapsed));
         }
     }
@@ -216,5 +116,104 @@ public class ServiceBusDistopExecutor : IDistopService, IHostLifetime, IAsyncDis
             args.EntityPath,
             args.Exception);
         return Task.CompletedTask;
+    }
+
+    private void ScheduleDistop(ProcessMessageEventArgs args)
+    {
+        // Check if we should send back a reply or not
+        var responseInfo = ResponseInfo.FromProcessor(args);
+        // Deserialize the Distop from a CloudEvent
+        CloudEvent? receivedCloudEvent = CloudEvent.Parse(args.Message.Body);
+        var distopContext = receivedCloudEvent?.Data?.ToObjectFromJson<DistopContext>()
+                            ?? throw new InvalidOperationException();
+
+        //TODO run the job and then complete the message?
+        Task.Factory.StartNew(async () => await RunDistop(distopContext, responseInfo));
+    }
+
+    private async Task RunDistop(DistopContext distopContext, ResponseInfo responseInfo)
+    {
+        var watch = Stopwatch.StartNew();
+        //Or just accept and then fire it off?
+        _logger.LogInformation("Distop started: '{}'", distopContext);
+        var result = await _distopExecutor.ExecuteDistop(distopContext);
+        _logger.LogInformation("Distop finished: '{}', elapsed '{}'", distopContext, watch.Elapsed);
+
+        if (responseInfo.ExpectReply)
+        {
+            var message = BuildServiceBusMessage(result, responseInfo);
+            await SendDistopResult(message, CancellationToken.None); //TODO review cancellation token?
+        }
+    }
+
+    // TODO use Polly
+    private async Task SendDistopResult(ServiceBusMessage message, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            _logger.LogTrace("Posting ServiceBus message {} to {}", message.MessageId, _sender.EntityPath);
+            await this._sender.SendMessageAsync(message, cancellationToken);
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Posting ServiceBus message {} to {} failed", message.MessageId, _sender.EntityPath);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            _logger.LogTrace("Posted ServiceBus message {} to {} in {}", message.MessageId, _sender.EntityPath, stopwatch.Elapsed);
+            // TODO add telemetry metrics
+            // this.telemetryLogger.Log(new MessagePostMetric(this.topicName, message, stopwatch.Elapsed));
+        }
+
+    }
+
+    private ServiceBusMessage BuildServiceBusMessage(Result<object?, Exception> result, ResponseInfo responseInfo)
+    {
+        var distopReturnedValue = result.ExtractError(out var res, out var exx)
+            ? new DistopReturnedValue() {Value = res}
+            : new DistopReturnedValue() {Value = exx}; // TODO returning exceptions
+        var cloudEvent = new CloudEvent(
+            CloudEventSource,
+            nameof(DistopReturnedValue),
+            distopReturnedValue);
+
+        return new ServiceBusMessage(new BinaryData(cloudEvent))
+        {
+            // Return the result of the distop in a unique session of the sender
+            SessionId = responseInfo.SessionId,
+            // TODO Dedup on ServiceBus incorrect retries (sender fails before is aware of message sent -2 messages sent)
+            // TODO The MessageId needs to be set explicitly and predictably
+            MessageId = Guid.NewGuid().ToString(),
+            TimeToLive = TimeSpan.FromMinutes(10),
+            CorrelationId = responseInfo.MessageId
+        };
+        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.SerializationMasterVersion, CurrentSerializationMasterVersion);
+        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.SerializationSubVersion, this.SerializationSubVersion);
+        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.MessageType, this.MessageType);
+        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.PostTime, DateTime.UtcNow);
+        // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.TargetPool, currentPool);
+    }
+
+    private record ResponseInfo
+    {
+        public bool ExpectReply { get; private init; }
+        public string SessionId { get; private init; }
+        public string MessageId { get; private init; }
+
+        internal static ResponseInfo FromProcessor(ProcessMessageEventArgs args)
+        {
+            // TODO review: reply to sessionId or check the custom header?
+            // args.Message.ReplyToSessionId;
+            return new ResponseInfo()
+            {
+                ExpectReply = bool.Parse(args.Message.ApplicationProperties[ExpectReplyHeader] as string ?? string.Empty),
+                SessionId = args.Message.ReplyToSessionId,
+                MessageId = args.Message.MessageId
+            };
+        }
     }
 }

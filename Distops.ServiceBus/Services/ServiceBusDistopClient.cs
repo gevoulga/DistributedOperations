@@ -13,27 +13,40 @@ namespace Distops.ServiceBus.Services;
 
 // https://docs.microsoft.com/en-us/samples/azure/azure-sdk-for-net/azuremessagingservicebus-samples/
 // https://andrewlock.net/introducing-ihostlifetime-and-untangling-the-generic-host-startup-interactions/
-public class ServiceBusDistopClient : IDistopService, IAsyncDisposable
+public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
 {
-    private const string CloudEventSource = "/cloudevents/distops/servicebus";
+    internal const string CloudEventSource = "/cloudevents/distops/servicebus";
+    internal const string ExpectReplyHeader = "x-expect-reply";
 
     private readonly ILogger<ServiceBusDistopClient> _logger;
-    private readonly ServiceBusDistopClientOptions _options;
+    private readonly ServiceBusDistopOptions _options;
     private readonly ServiceBusClient _client;
     private readonly ServiceBusSender _sender;
 
     public ServiceBusDistopClient(
-        IOptions<ServiceBusDistopClientOptions> options,
+        IOptions<ServiceBusDistopOptions> options,
         ILogger<ServiceBusDistopClient> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
-        _client = new ServiceBusClient(_options.ConnectionString, _options.ServiceBusClientOptions);
+        _client = new ServiceBusClient(_options.ServiceBusEndpoint, _options.ServiceBusClientOptions);
+        _sender = _client.CreateSender(_options.TopicName);
+    }
+
+    public ServiceBusDistopClient(
+        ILogger<ServiceBusDistopClient> logger,
+        IOptions<ServiceBusDistopOptions> options,
+        ServiceBusClient serviceBusClient)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+        _client = serviceBusClient;
         _sender = _client.CreateSender(_options.TopicName);
     }
 
     public async ValueTask DisposeAsync()
     {
+        // TODO  cleanup the servicebus client if it was created in constructed (and not injected)
         await Task.WhenAll(
             _sender.DisposeAsync().AsTask(),
             _client.DisposeAsync().AsTask());
@@ -73,6 +86,7 @@ public class ServiceBusDistopClient : IDistopService, IAsyncDisposable
         finally
         {
             stopwatch.Stop();
+            _logger.LogTrace("Posted ServiceBus message {} to {} in {}", message.MessageId, _sender.EntityPath, stopwatch.Elapsed);
             // TODO add telemetry metrics
             // this.telemetryLogger.Log(new MessagePostMetric(this.topicName, message, stopwatch.Elapsed));
         }
@@ -89,19 +103,18 @@ public class ServiceBusDistopClient : IDistopService, IAsyncDisposable
             CloudEventSource,
             nameof(DistopContext),
             distopContext);
-        var messageId = Guid.NewGuid().ToString();
         return new ServiceBusMessage(new BinaryData(cloudEvent))
         {
             // Return the result of the distop in a unique session of the sender
-            ReplyToSessionId = expectResponse ? _options.InstanceName : null,
+            // SessionId = CreateSessionProcessor
+            ReplyToSessionId = expectResponse ? $"{_options.InstanceName}-{cv.Value}" : null,
             // TODO Dedup on ServiceBus incorrect retries (sender fails before is aware of message sent -2 messages sent)
             // TODO The MessageId needs to be set explicitly and predictably
-            MessageId = messageId,
+            MessageId = cv.Value,
             TimeToLive = TimeSpan.FromMinutes(10),
-            CorrelationId = cv.Value,
             ApplicationProperties =
             {
-                { "expect-reply", expectResponse }
+                { ExpectReplyHeader, expectResponse }
             }
         };
         // serviceBusMessage.ApplicationProperties.Add(ApplicationProperties.SerializationMasterVersion, CurrentSerializationMasterVersion);
@@ -112,40 +125,43 @@ public class ServiceBusDistopClient : IDistopService, IAsyncDisposable
     }
 
     // TODO Use Polly
-    private async Task<object?> ReceiveMessage(string messageId, CancellationToken cancellationToken)
+    private async Task<object?> ReceiveMessage(string correlationId, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        await using var acceptSessionAsync = await _client.AcceptSessionAsync(_options.TopicName, _options.SubscriptionName, _options.InstanceName, _options.ServiceBusSessionReceiverOptions, cancellationToken);
-        var receiveMessage = await acceptSessionAsync.ReceiveMessageAsync(_options.ReceiveTimeout, cancellationToken);
+        var sessionId = $"{_options.InstanceName}-{correlationId}";
+        await using var acceptSessionAsync = await _client.AcceptSessionAsync(_options.TopicName, _options.SubscriptionName, sessionId, _options.ServiceBusSessionReceiverOptions, cancellationToken);
+        var message = await acceptSessionAsync.ReceiveMessageAsync(_options.ReceiveTimeout, cancellationToken);
+        _logger.LogTrace("Received ServiceBus message {}/{} on {}", message.MessageId, message.CorrelationId, _sender.EntityPath);
 
         // TODO review whether we can explicitly receive a message with a specific correlationId
         // ideally if there are any pending messages from previous execution (where the client died without ever receiving the response)
         // we want to let these messages in the topic
         // if the client retries the operation (where ServiceBus dedup will drop the message), the distop result will be there to be collected
         // Make sure we receive a response for the message we have sent
-        while (receiveMessage.CorrelationId != messageId)
-        {
-            // TODO review - Dead letter or Abandon?
-            await acceptSessionAsync.AbandonMessageAsync(receiveMessage, null , cancellationToken);
-            receiveMessage = await acceptSessionAsync.ReceiveMessageAsync(_options.ReceiveTimeout, cancellationToken);
-        }
+        // while (receiveMessage.CorrelationId != messageId)
+        // {
+        //     // TODO review - Dead letter or Abandon?
+        //     await acceptSessionAsync.AbandonMessageAsync(receiveMessage, null , cancellationToken);
+        //     receiveMessage = await acceptSessionAsync.ReceiveMessageAsync(_options.ReceiveTimeout, cancellationToken);
+        // }
 
         try
         {
             // Deserialize the message body into a CloudEvent
-            CloudEvent? receivedCloudEvent = CloudEvent.Parse(receiveMessage.Body);
+            CloudEvent? receivedCloudEvent = CloudEvent.Parse(message.Body);
             var distopReturnedValue = receivedCloudEvent?.Data?.ToObjectFromJson<DistopReturnedValue>();
 
             // we can evaluate application logic and use that to determine how to settle the message.
-            await acceptSessionAsync.CompleteMessageAsync(receiveMessage, cancellationToken);
+            await acceptSessionAsync.CompleteMessageAsync(message, cancellationToken);
             return distopReturnedValue?.Value;
         }
         catch (ServiceBusException serviceBusException)
         {
-            if (serviceBusException.IsTransient)
+            _logger.LogError(serviceBusException, "Receiving ServiceBus message {} on {} failed", message.MessageId, _sender.EntityPath);
+            if (!serviceBusException.IsTransient)
             {
                 await acceptSessionAsync.DeadLetterMessageAsync(
-                    receiveMessage,
+                    message,
                     nameof(DistopPermanentException),
                     serviceBusException.Message,
                     cancellationToken);
@@ -155,6 +171,8 @@ public class ServiceBusDistopClient : IDistopService, IAsyncDisposable
         finally
         {
             stopwatch.Stop();
+            _logger.LogTrace("Received ServiceBus message {} to {} in {}", message.MessageId, _sender.EntityPath, stopwatch.Elapsed);
+            // TODO add telemetry metrics
             // this.telemetryLogger.Log(new MessagePostMetric(this.topicName, message, stopwatch.Elapsed));
         }
     }

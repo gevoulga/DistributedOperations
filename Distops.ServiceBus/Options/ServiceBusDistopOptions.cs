@@ -3,12 +3,12 @@ using Azure.Messaging.ServiceBus;
 
 namespace Distops.ServiceBus.Options;
 
-public class ServiceBusDistopClientOptions
+public class ServiceBusDistopOptions
 {
-    public const string Section = "ServiceBusDistopClient";
+    public const string Section = "ServiceBusDistop";
 
     [Required]
-    public string ConnectionString { get; set; }
+    public string ServiceBusEndpoint { get; set; }
     [Required]
     public string TopicName { get; set; }
     [Required]
@@ -17,5 +17,6 @@ public class ServiceBusDistopClientOptions
     public string InstanceName { get; set; }
     public ServiceBusClientOptions ServiceBusClientOptions  { get; set; }
     public ServiceBusSessionReceiverOptions ServiceBusSessionReceiverOptions { get; set; }
+    public ServiceBusProcessorOptions ServiceBusProcessorOptions { get; set; }
     public TimeSpan ReceiveTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }

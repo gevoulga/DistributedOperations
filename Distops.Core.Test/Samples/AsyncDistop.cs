@@ -74,7 +74,7 @@ public class AsyncDistop : IAsyncDistop
         }
     }
 
-    public virtual IObservable<long> Ticks(DistopDto distopDto)
+    public virtual IAsyncEnumerable<long> Ticks(DistopDto distopDto)
     {
         var watch = Stopwatch.StartNew();
         _logger.LogInformation($"Ticks started with args: {nameof(distopDto)}: {distopDto}");

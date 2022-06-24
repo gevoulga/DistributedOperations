@@ -31,7 +31,7 @@ public class DistopExecutor : IDistopExecutor
     public async Task<Result<object?, Exception>> ExecuteDistop(DistopContext distopContext)
     {
         var watch = Stopwatch.StartNew();
-        _logger.LogInformation($"Before target call {distopContext.MethodDeclaringObject}.{distopContext.MethodName} with args: {distopContext.Arguments}" );
+        _logger.LogInformation("Distop started: '{}'", distopContext);
 
         var target = ResolveTarget(distopContext);
         var methodInfo = ResolveMethod(distopContext, target);
@@ -48,13 +48,14 @@ public class DistopExecutor : IDistopExecutor
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex,$"Target call {distopContext.MethodName} threw exception");
+            _logger.LogInformation(ex,"Distop: '{}' threw exception", distopContext);
             return ex;
         }
         finally
         {
             watch.Stop();
-            _logger.LogInformation($"After target call {distopContext.MethodName}, elapsed {watch.Elapsed}");
+            _logger.LogInformation("Distop finished: '{}', elapsed '{}'", distopContext, watch.Elapsed);
+            // TODO add telemetry metrics
         }
     }
 

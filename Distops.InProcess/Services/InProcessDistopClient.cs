@@ -3,11 +3,11 @@ using Distops.Core.Services;
 
 namespace Distops.InProcess.Services;
 
-public class InProcessDistopService : IDistopService
+public class InProcessDistopClient : IDistopClient
 {
     private readonly IDistopExecutor _distopExecutor;
 
-    public InProcessDistopService(IDistopExecutor distopExecutor)
+    public InProcessDistopClient(IDistopExecutor distopExecutor)
     {
         _distopExecutor = distopExecutor;
     }
@@ -15,13 +15,24 @@ public class InProcessDistopService : IDistopService
     public async Task<object?> Call(DistopContext distopContext, CancellationToken? cancellationToken = default)
     {
         var token = cancellationToken ?? CancellationToken.None;
-        return await _distopExecutor.ExecuteDistop(distopContext);
+        return await RunDistop(distopContext);
     }
 
     public Task FireAndForget(DistopContext distopContext, CancellationToken? cancellationToken = default)
     {
         var token = cancellationToken ?? CancellationToken.None;
-        Task.Factory.StartNew(async () => await _distopExecutor.ExecuteDistop(distopContext), token);
+        Task.Factory.StartNew(async () => await RunDistop(distopContext), token);
         return Task.CompletedTask;
+    }
+
+    private async Task<object?> RunDistop(DistopContext distopContext)
+    {
+        var result = await _distopExecutor.ExecuteDistop(distopContext);
+        if (result.ExtractError(out var ok, out var ex))
+        {
+            throw ex;
+        }
+
+        return ok;
     }
 }

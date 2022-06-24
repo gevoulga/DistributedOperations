@@ -17,7 +17,7 @@ public struct SerializableType //: IYamlConvertible
 
     public override string ToString()
     {
-        return $"{nameof(_typeName)}: {_typeName}";
+        return _typeName;
     }
 
     // void IYamlConvertible.Read(IParser parser, Type expectedType, ObjectDeserializer nestedObjectDeserializer)
