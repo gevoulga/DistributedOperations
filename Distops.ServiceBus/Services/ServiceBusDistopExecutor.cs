@@ -30,7 +30,7 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
         _distopExecutor = distopExecutor ?? throw new ArgumentNullException(nameof(distopExecutor));
         var optionsValue = options.Value ?? throw new ArgumentNullException(nameof(options));
         _client = new ServiceBusClient(optionsValue.ServiceBusEndpoint, optionsValue.ServiceBusClientOptions);
-        _sender = _client.CreateSender(optionsValue.TopicName);
+        _sender = _client.CreateSender(optionsValue.ResultTopic);
         _serviceBusProcessor = CreateProcessor(optionsValue);
     }
 
@@ -45,14 +45,14 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
         var optionsValue = options.Value ?? throw new ArgumentNullException(nameof(options));
         _client = serviceBusClient;
         _distopExecutor = distopExecutor;
-        _sender = _client.CreateSender(optionsValue.TopicName);
+        _sender = _client.CreateSender(optionsValue.ResultTopic);
         _serviceBusProcessor = CreateProcessor(optionsValue);
     }
 
     private ServiceBusSessionProcessor CreateProcessor(ServiceBusDistopOptions options)
     {
         // create a session processor that we can use to process the messages
-        var processor = _client.CreateSessionProcessor(options.TopicName, options.SubscriptionName, options.ServiceBusSessionProcessorOptions);
+        var processor = _client.CreateSessionProcessor(options.ScheduleTopic, options.ScheduleSubscription, options.ServiceBusSessionProcessorOptions);
         // configure the message and error handler to use
         processor.ProcessMessageAsync += MessageHandler;
         processor.ProcessErrorAsync += ErrorHandler;
@@ -153,7 +153,7 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
         try
         {
             _logger.LogTrace("Posting ServiceBus message {} to {}", message.MessageId, _sender.EntityPath);
-            await this._sender.SendMessageAsync(message, cancellationToken);
+            await _sender.SendMessageAsync(message, cancellationToken);
         }
         catch (ServiceBusException ex)
         {
@@ -173,8 +173,8 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
     private ServiceBusMessage BuildServiceBusMessage(Result<object?, Exception> result, ResponseInfo responseInfo)
     {
         var distopReturnedValue = result.ExtractError(out var res, out var exx)
-            ? new DistopReturnedValue() {Value = res}
-            : new DistopReturnedValue() {Value = exx}; // TODO returning exceptions
+            ? new DistopReturnedValue {Value = exx}
+            : new DistopReturnedValue {Value = res}; // TODO returning exceptions
 
         return new ServiceBusMessage(distopReturnedValue.ToCloudEvent())
         {

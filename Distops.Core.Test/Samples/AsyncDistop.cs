@@ -10,7 +10,7 @@ public class AsyncDistop : IAsyncDistop
 
     public AsyncDistop(ILogger<AsyncDistop> logger)
     {
-        this._logger = logger;
+        _logger = logger;
         _tickStream = EveryOneSecond();
     }
 

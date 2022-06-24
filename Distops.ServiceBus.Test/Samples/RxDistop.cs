@@ -13,7 +13,7 @@ public class RxDistop : IAsyncDistop
 
     public RxDistop(ILogger<RxDistop> logger)
     {
-        this._logger = logger;
+        _logger = logger;
         _tickStream = Observable.Interval(TimeSpan.FromSeconds(1))
             .Publish()
             .RefCount();

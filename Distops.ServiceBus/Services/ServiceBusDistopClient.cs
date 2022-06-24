@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Distops.Core.Model;
 using Distops.Core.Services;
@@ -27,7 +28,7 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _client = new ServiceBusClient(_options.ServiceBusEndpoint, _options.ServiceBusClientOptions);
-        _sender = _client.CreateSender(_options.TopicName);
+        _sender = _client.CreateSender(_options.ScheduleTopic);
     }
 
     public ServiceBusDistopClient(
@@ -38,7 +39,7 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _client = serviceBusClient;
-        _sender = _client.CreateSender(_options.TopicName);
+        _sender = _client.CreateSender(_options.ScheduleTopic);
     }
 
     public async ValueTask DisposeAsync()
@@ -54,7 +55,12 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
         try
         {
             var messageId = await SendMessageAsync(distopContext, true, cancellationToken.GetValueOrDefault());
-            return await ReceiveMessage(messageId, cancellationToken.GetValueOrDefault());
+            var value = await ReceiveMessage(messageId, cancellationToken.GetValueOrDefault());
+            if (value is JsonElement jsonElement)
+            {
+                return jsonElement.Deserialize(distopContext.MethodReturnType);
+            }
+            return value;
         }
         catch (Exception e)
         {
@@ -80,7 +86,7 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
         try
         {
             _logger.LogTrace("Posting ServiceBus message {} to {}", message.MessageId, _sender.EntityPath);
-            await this._sender.SendMessageAsync(message, cancellationToken);
+            await _sender.SendMessageAsync(message, cancellationToken);
             return message.MessageId;
         }
         catch (ServiceBusException ex)
@@ -130,7 +136,7 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
     {
         var stopwatch = Stopwatch.StartNew();
         var sessionId = $"{_options.InstanceName}-{correlationId}";
-        await using var acceptSessionAsync = await _client.AcceptSessionAsync(_options.TopicName, _options.SubscriptionName, sessionId, _options.ServiceBusSessionReceiverOptions, cancellationToken);
+        await using var acceptSessionAsync = await _client.AcceptSessionAsync(_options.ResultTopic, _options.ResultSubscription, sessionId, _options.ServiceBusSessionReceiverOptions, cancellationToken);
         var message = await acceptSessionAsync.ReceiveMessageAsync(_options.ReceiveTimeout, cancellationToken);
 
         // Check if message has been received

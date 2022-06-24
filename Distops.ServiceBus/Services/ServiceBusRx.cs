@@ -50,7 +50,7 @@ public class ServiceBusRx
             }
             Task ErrorHandler(ProcessErrorEventArgs args)
             {
-                _logger.LogError(args.Exception, "Error on processing ServiceBus message on topic {0}\r\nError Source={1}\n\nNamespace={2}\r\nEntityPath={3}\r\n{5}", this.topicName, args.ErrorSource, args.FullyQualifiedNamespace, args.EntityPath, args.Exception);
+                _logger.LogError(args.Exception, "Error on processing ServiceBus message on topic {0}\r\nError Source={1}\n\nNamespace={2}\r\nEntityPath={3}\r\n{5}", topicName, args.ErrorSource, args.FullyQualifiedNamespace, args.EntityPath, args.Exception);
                 return Task.CompletedTask;
             }
 

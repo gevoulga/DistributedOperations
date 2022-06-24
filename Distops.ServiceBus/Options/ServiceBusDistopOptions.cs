@@ -10,9 +10,13 @@ public class ServiceBusDistopOptions
     [Required]
     public string ServiceBusEndpoint { get; set; }
     [Required]
-    public string TopicName { get; set; }
+    public string ScheduleTopic { get; set; }
     [Required]
-    public string SubscriptionName { get; set; }
+    public string ScheduleSubscription { get; set; }
+    [Required]
+    public string ResultTopic { get; set; }
+    [Required]
+    public string ResultSubscription { get; set; }
     [Required]
     public string InstanceName { get; set; }
     public ServiceBusClientOptions ServiceBusClientOptions  { get; set; }

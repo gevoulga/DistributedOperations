@@ -9,12 +9,12 @@ namespace Distops.Core.Test
 
         public TestContextLoggerProvider(TestContext context)
         {
-            this._context = context;
+            _context = context;
         }
 
         public ILogger CreateLogger(string categoryName)
         {
-            return new TestContextLogger(this._context, categoryName);
+            return new TestContextLogger(_context, categoryName);
         }
 
         public void Dispose()
@@ -44,13 +44,13 @@ namespace Distops.Core.Test
 
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
             {
-                if (!this.IsEnabled(logLevel))
+                if (!IsEnabled(logLevel))
                 {
                     return;
                 }
 
                 var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff");
-                TestContext.Progress.WriteLine($"[{timestamp}] [{logLevel}] [{this.categoryName}] - {formatter(state, exception)} {exception?.StackTrace}");
+                TestContext.Progress.WriteLine($"[{timestamp}] [{logLevel}] [{categoryName}] - {formatter(state, exception)} {exception?.StackTrace}");
             }
         }
 

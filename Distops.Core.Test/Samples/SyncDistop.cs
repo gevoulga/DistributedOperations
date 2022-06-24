@@ -8,7 +8,7 @@ public class SyncDistop : ISyncDistop
 
     public SyncDistop(ILogger<SyncDistop> logger)
     {
-        this._logger = logger;
+        _logger = logger;
     }
 
     public long SyncCallReturns()

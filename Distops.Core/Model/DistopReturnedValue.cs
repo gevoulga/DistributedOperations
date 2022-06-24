@@ -3,5 +3,5 @@
 public record DistopReturnedValue
 {
     // TODO returning exceptions
-    public object? Value { get; set; }
+    public object? Value { get; init; }
 }
