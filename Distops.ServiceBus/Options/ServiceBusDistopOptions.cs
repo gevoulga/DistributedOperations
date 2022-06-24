@@ -17,6 +17,7 @@ public class ServiceBusDistopOptions
     public string InstanceName { get; set; }
     public ServiceBusClientOptions ServiceBusClientOptions  { get; set; }
     public ServiceBusSessionReceiverOptions ServiceBusSessionReceiverOptions { get; set; }
-    public ServiceBusProcessorOptions ServiceBusProcessorOptions { get; set; }
+    public ServiceBusSessionProcessorOptions ServiceBusSessionProcessorOptions { get; set; }
+    // TODO  this should be defined on the method level...?
     public TimeSpan ReceiveTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }

@@ -36,13 +36,10 @@ public class DistopExecutor : IDistopExecutor
         var target = ResolveTarget(distopContext);
         var methodInfo = ResolveMethod(distopContext, target);
         Type methodReturnType = distopContext.MethodReturnType;
-        var parameters = distopContext.Arguments
-            .Select(tuple => tuple.Item2)
-            .ToArray();
 
         try
         {
-            var returnedValue = methodInfo.Invoke(target, parameters);
+            var returnedValue = methodInfo.Invoke(target, distopContext.Arguments);
             var ret = await IsValidTypeAndReturn(methodReturnType, returnedValue);
             return new Result<object?, Exception>.Success(ret);
         }
@@ -68,7 +65,7 @@ public class DistopExecutor : IDistopExecutor
 
     private MethodInfo ResolveMethod(DistopContext distopContext, object target)
     {
-        var genericParameterCount = distopContext.GenericArguments?.Length ?? 0;
+        var genericParameterCount = distopContext.GenericArguments?.Count ?? 0;
         var parameterTypes = distopContext.ArgumentTypes
             .Select((t, i) => t.GetType(i))
             .ToArray();

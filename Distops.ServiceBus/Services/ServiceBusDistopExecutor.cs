@@ -4,6 +4,7 @@ using Azure.Messaging.ServiceBus;
 using Distops.Core.Model;
 using Distops.Core.Services;
 using Distops.ServiceBus.Options;
+using Distops.ServiceBus.Utils;
 using Microsoft.CorrelationVector;
 using Microsoft.Extensions.Options;
 using static Distops.ServiceBus.Services.ServiceBusDistopClient;
@@ -16,7 +17,7 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
 {
     private readonly ILogger<ServiceBusDistopExecutor> _logger;
     private readonly ServiceBusClient _client;
-    private readonly ServiceBusProcessor _serviceBusProcessor;
+    private readonly ServiceBusSessionProcessor _serviceBusProcessor;
     private readonly IDistopExecutor _distopExecutor;
     private readonly ServiceBusSender _sender;
 
@@ -48,10 +49,10 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
         _serviceBusProcessor = CreateProcessor(optionsValue);
     }
 
-    private ServiceBusProcessor CreateProcessor(ServiceBusDistopOptions options)
+    private ServiceBusSessionProcessor CreateProcessor(ServiceBusDistopOptions options)
     {
         // create a session processor that we can use to process the messages
-        var processor = _client.CreateProcessor(options.TopicName, options.SubscriptionName, options.ServiceBusProcessorOptions);
+        var processor = _client.CreateSessionProcessor(options.TopicName, options.SubscriptionName, options.ServiceBusSessionProcessorOptions);
         // configure the message and error handler to use
         processor.ProcessMessageAsync += MessageHandler;
         processor.ProcessErrorAsync += ErrorHandler;
@@ -73,13 +74,13 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
     public async Task StopAsync(CancellationToken cancellationToken) =>
         await _serviceBusProcessor.StopProcessingAsync(cancellationToken);
 
-    private async Task MessageHandler(ProcessMessageEventArgs args)
+    private async Task MessageHandler(ProcessSessionMessageEventArgs args)
     {
         var watch = Stopwatch.StartNew();
         _logger.LogTrace("Received ServiceBus message {} on {}", args.Message.MessageId, _serviceBusProcessor.EntityPath);
         try
         {
-            ScheduleDistop(args);
+            await ScheduleDistop(args);
 
             // we can evaluate application logic and use that to determine how to settle the message.
             await args.CompleteMessageAsync(args.Message);
@@ -118,17 +119,15 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    private void ScheduleDistop(ProcessMessageEventArgs args)
+    private async Task ScheduleDistop(ProcessSessionMessageEventArgs args)
     {
         // Check if we should send back a reply or not
         var responseInfo = ResponseInfo.FromProcessor(args);
         // Deserialize the Distop from a CloudEvent
-        CloudEvent? receivedCloudEvent = CloudEvent.Parse(args.Message.Body);
-        var distopContext = receivedCloudEvent?.Data?.ToObjectFromJson<DistopContext>()
-                            ?? throw new InvalidOperationException();
+        var distopContext = await args.Parse<DistopContext>();
 
         //TODO run the job and then complete the message?
-        Task.Factory.StartNew(async () => await RunDistop(distopContext, responseInfo));
+        Task.Factory.StartNew(() => RunDistop(distopContext, responseInfo));
     }
 
     private async Task RunDistop(DistopContext distopContext, ResponseInfo responseInfo)
@@ -176,12 +175,8 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
         var distopReturnedValue = result.ExtractError(out var res, out var exx)
             ? new DistopReturnedValue() {Value = res}
             : new DistopReturnedValue() {Value = exx}; // TODO returning exceptions
-        var cloudEvent = new CloudEvent(
-            CloudEventSource,
-            nameof(DistopReturnedValue),
-            distopReturnedValue);
 
-        return new ServiceBusMessage(new BinaryData(cloudEvent))
+        return new ServiceBusMessage(distopReturnedValue.ToCloudEvent())
         {
             // Return the result of the distop in a unique session of the sender
             SessionId = responseInfo.SessionId,
@@ -204,13 +199,13 @@ public class ServiceBusDistopExecutor : IHostLifetime, IAsyncDisposable
         public string SessionId { get; private init; }
         public string MessageId { get; private init; }
 
-        internal static ResponseInfo FromProcessor(ProcessMessageEventArgs args)
+        internal static ResponseInfo FromProcessor(ProcessSessionMessageEventArgs args)
         {
             // TODO review: reply to sessionId or check the custom header?
             // args.Message.ReplyToSessionId;
             return new ResponseInfo()
             {
-                ExpectReply = bool.Parse(args.Message.ApplicationProperties[ExpectReplyHeader] as string ?? string.Empty),
+                ExpectReply = args.Message.ApplicationProperties.TryGetValue(ExpectReplyHeader, out var reply) && (reply as bool? ?? false),
                 SessionId = args.Message.ReplyToSessionId,
                 MessageId = args.Message.MessageId
             };

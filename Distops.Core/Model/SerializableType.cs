@@ -1,23 +1,23 @@
 ﻿namespace Distops.Core.Model;
 
-public struct SerializableType //: IYamlConvertible
+public readonly record struct SerializableType //: IYamlConvertible
 {
     // private Type type;
-    private string _typeName;
+    public string TypeName { get; init; }
 
     public static implicit operator Type(SerializableType value)
     {
-        return Type.GetType(value._typeName) ?? throw new InvalidOperationException($"Type {value._typeName} not found");
+        return Type.GetType(value.TypeName) ?? throw new InvalidOperationException($"Type {value.TypeName} not found");
     }
 
     public static implicit operator SerializableType(Type? value)
     {
-        return new SerializableType { _typeName = value?.AssemblyQualifiedName ?? throw new ArgumentNullException(nameof(value)) };
+        return new SerializableType { TypeName = value?.AssemblyQualifiedName ?? throw new ArgumentNullException(nameof(value)) };
     }
 
     public override string ToString()
     {
-        return _typeName;
+        return TypeName;
     }
 
     // void IYamlConvertible.Read(IParser parser, Type expectedType, ObjectDeserializer nestedObjectDeserializer)

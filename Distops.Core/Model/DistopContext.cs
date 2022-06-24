@@ -4,17 +4,17 @@ namespace Distops.Core.Model;
 
 public record DistopContext
 {
-    public (SerializableType, object)[]? Arguments { get; set; }
-    public GenericSerializableType[]? ArgumentTypes { get; set; }
-    public SerializableType[]? GenericArguments { get; set; }
-    public SerializableType MethodDeclaringObject { get; set; }
+    public object?[]? Arguments { get; init; }
+    public List<GenericSerializableType> ArgumentTypes { get; init; }
+    public List<SerializableType> GenericArguments { get; init; }
+    public SerializableType MethodDeclaringObject { get; init; }
     [Required]
-    public string MethodName { get; set; }
-    public SerializableType? MethodReturnType { get; set; }
+    public string MethodName { get; init; }
+    public SerializableType MethodReturnType { get; init; }
 
     public override string ToString() =>
         $"{MethodReturnType} " +
         // $"{MethodDeclaringObject}.{MethodName} " +
         $"{MethodName} " +
-        $"({string.Join(", ", Arguments?.Select(tuple => tuple.Item1) ?? Enumerable.Empty<SerializableType>())})";
+        $"({string.Join(", ", ArgumentTypes)})";
 }

@@ -3,6 +3,7 @@ using Distops.Core.Extensions;
 using Distops.Core.Test;
 using Distops.Core.Test.Samples;
 using Distops.ServiceBus.Extensions;
+using Distops.ServiceBus.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,8 +44,6 @@ namespace Distops.ServiceBus.Test
             serviceCollection
                 .AddServiceBusDistopClient(configuration)
                 .AddServiceBusDistopExecutor(configuration)
-                // .AddDistopsService<InProcessDistopService>() // Add the processing of distops
-                // .AddDistopsService((ss) => distopService)
                 .AddSingleton<IAsyncDistop, AsyncDistop>()
                 .AddSingleton<ISyncDistop, SyncDistop>()
                 .AddSingleton<IThrowsDistop, ThrowsDistop>()
@@ -61,8 +60,10 @@ namespace Distops.ServiceBus.Test
         }
 
         [Test]
-        public void InProcessSyncDistop()
+        public async Task InProcessSyncDistop()
         {
+            //Start
+            await sp.GetRequiredService<ServiceBusDistopExecutor>().WaitForStartAsync(CancellationToken.None);
             var proxy = sp.GetDistop<ISyncDistop>();
             TestContext.Progress.WriteLine("Starting calls to proxy");
 

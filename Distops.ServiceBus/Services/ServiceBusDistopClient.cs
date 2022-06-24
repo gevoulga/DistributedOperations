@@ -1,11 +1,9 @@
 ﻿using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
-using Azure.Messaging;
 using Azure.Messaging.ServiceBus;
 using Distops.Core.Model;
 using Distops.Core.Services;
 using Distops.ServiceBus.Options;
+using Distops.ServiceBus.Utils;
 using Microsoft.CorrelationVector;
 using Microsoft.Extensions.Options;
 
@@ -15,7 +13,6 @@ namespace Distops.ServiceBus.Services;
 // https://andrewlock.net/introducing-ihostlifetime-and-untangling-the-generic-host-startup-interactions/
 public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
 {
-    internal const string CloudEventSource = "/cloudevents/distops/servicebus";
     internal const string ExpectReplyHeader = "x-expect-reply";
 
     private readonly ILogger<ServiceBusDistopClient> _logger;
@@ -54,8 +51,16 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
 
     public async Task<object?> Call(DistopContext distopContext, CancellationToken? cancellationToken = default)
     {
-        var messageId = await SendMessageAsync(distopContext, true, cancellationToken.GetValueOrDefault());
-        return await ReceiveMessage(messageId, cancellationToken.GetValueOrDefault());
+        try
+        {
+            var messageId = await SendMessageAsync(distopContext, true, cancellationToken.GetValueOrDefault());
+            return await ReceiveMessage(messageId, cancellationToken.GetValueOrDefault());
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 
     public async Task FireAndForget(DistopContext distopContext, CancellationToken? cancellationToken = default)
@@ -99,14 +104,10 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
     {
         // var serialized = JsonSerializer.Serialize(distopContext);
         // var message = new ServiceBusMessage(Encoding.UTF8.GetBytes(serialized));
-        var cloudEvent = new CloudEvent(
-            CloudEventSource,
-            nameof(DistopContext),
-            distopContext);
-        return new ServiceBusMessage(new BinaryData(cloudEvent))
+        return new ServiceBusMessage(distopContext.ToCloudEvent())
         {
             // Return the result of the distop in a unique session of the sender
-            // SessionId = CreateSessionProcessor
+            SessionId = _options.InstanceName,
             ReplyToSessionId = expectResponse ? $"{_options.InstanceName}-{cv.Value}" : null,
             // TODO Dedup on ServiceBus incorrect retries (sender fails before is aware of message sent -2 messages sent)
             // TODO The MessageId needs to be set explicitly and predictably
@@ -131,6 +132,13 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
         var sessionId = $"{_options.InstanceName}-{correlationId}";
         await using var acceptSessionAsync = await _client.AcceptSessionAsync(_options.TopicName, _options.SubscriptionName, sessionId, _options.ServiceBusSessionReceiverOptions, cancellationToken);
         var message = await acceptSessionAsync.ReceiveMessageAsync(_options.ReceiveTimeout, cancellationToken);
+
+        // Check if message has been received
+        if (message is null)
+        {
+            _logger.LogError("No ServiceBus message reply received for {}", correlationId);
+            throw new ArgumentNullException();
+        }
         _logger.LogTrace("Received ServiceBus message {}/{} on {}", message.MessageId, message.CorrelationId, _sender.EntityPath);
 
         // TODO review whether we can explicitly receive a message with a specific correlationId
@@ -147,13 +155,14 @@ public class ServiceBusDistopClient : IDistopClient, IAsyncDisposable
 
         try
         {
+            // TODO Retry until we find a message with the correct type and the right correlation id
+            // TODO abandon messages and repeat receive, if wrong message (use Rx?)
             // Deserialize the message body into a CloudEvent
-            CloudEvent? receivedCloudEvent = CloudEvent.Parse(message.Body);
-            var distopReturnedValue = receivedCloudEvent?.Data?.ToObjectFromJson<DistopReturnedValue>();
+            var distopReturnedValue = await message.Parse<DistopReturnedValue>(acceptSessionAsync, cancellationToken);
 
             // we can evaluate application logic and use that to determine how to settle the message.
             await acceptSessionAsync.CompleteMessageAsync(message, cancellationToken);
-            return distopReturnedValue?.Value;
+            return distopReturnedValue.Value;
         }
         catch (ServiceBusException serviceBusException)
         {

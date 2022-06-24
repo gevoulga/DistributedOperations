@@ -51,19 +51,20 @@ public abstract class BaseDistopInterceptor : IInterceptor
     private DistopContext ResolveDistopContext(IInvocation invocation)
     {
         var arguments = invocation.Arguments?
-            .Select<object, (SerializableType type, object obj)>(obj => (obj.GetType(), obj))
+            // .Select<object, (SerializableType type, object obj)>(obj => (obj.GetType(), obj))
             .ToArray();
         var genericArguments = invocation.GenericArguments?
-            .Select<Type, SerializableType>(genericType => genericType).ToArray();
+            .Select<Type, SerializableType>(genericType => genericType)
+            .ToList();
         var argumentTypes = invocation.Method.GetParameters()
             .Select<ParameterInfo, GenericSerializableType>(parameterInfo => parameterInfo.ParameterType)
-            .ToArray();
+            .ToList();
 
-        return new DistopContext()
+        return new DistopContext
         {
             Arguments = arguments,
             ArgumentTypes = argumentTypes,
-            GenericArguments = genericArguments,
+            GenericArguments = genericArguments ?? new List<SerializableType>(),
             MethodDeclaringObject = invocation.Method.DeclaringType,
             MethodName = invocation.Method.Name,
             MethodReturnType = invocation.Method.ReturnType,
